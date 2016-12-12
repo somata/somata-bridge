@@ -16,14 +16,14 @@ if !from_port or !to_addr?.host or !to_addr?.port
 
 bridged_connection_id = null
 
-class Connection2 extends Connection
+class BridgeConnection extends Connection
     handleMessage: (message) ->
         if message.service?
             @emit 'forward', message
         else
             super
 
-class Binding2 extends Binding
+class BridgeBinding extends Binding
     forwarded_pings: {}
 
     handleMessage: (client_id, message) ->
@@ -40,11 +40,7 @@ class Binding2 extends Binding
 
 class Bridge extends EventEmitter
     service_connections: {}
-    connection_cbs: {}
     service_connection_cbs: {}
-    # registry_connection
-    # remote_bridge_connection
-    # local_bridge_binding
 
     forward_local_services: {}
     reverse_local_services: {}
@@ -64,17 +60,24 @@ class Bridge extends EventEmitter
             host: @registry_host or REGISTRY_HOST
             port: @registry_port or REGISTRY_PORT
             service: {id: 'registry~b', name: 'registry'}
+        @registry_connection.on 'connect', @connectedToRegistry.bind(@)
         @registry_connection.subscribe 'register', @registeredService.bind(@)
         @registry_connection.subscribe 'deregister', @deregisteredService.bind(@)
 
     connectedToBridge: ->
-
         if BRIDGE_LOCAL
-            # Ask remote bridge for registry info
-            @remoteBridgeMethod 'findServices', @foundRemoteServices.bind(@)
-
-            # Get local registry info and send to remote bridge
             @registry_connection.method 'findServices', @foundLocalServices.bind(@)
+            # Ask remote bridge for registry info
+            setTimeout =>
+                @remoteBridgeMethod 'findServices', @foundRemoteServices.bind(@)
+            , 1000
+
+    connectedToRegistry: ->
+        if BRIDGE_LOCAL
+            # Get local registry info and send to remote bridge
+            setTimeout =>
+                @registry_connection.method 'findServices', @foundLocalServices.bind(@)
+            , 1000
 
     foundRemoteServices: (err, remote_services) ->
         remote_service_instances = []
@@ -132,10 +135,7 @@ class Bridge extends EventEmitter
     # remote bridge binding
 
     createBinding: ->
-        # @binding_socket = zmq.socket 'router'
-        # @binding_socket.bindSync helpers.makeAddress 'tcp', '0.0.0.0', from_port
-        # @binding_socket.on 'message', @onBindingMessage.bind(@)
-        @binding = new Binding2 {host: '0.0.0.0', port: from_port}
+        @binding = new BridgeBinding {host: '0.0.0.0', port: from_port}
         @binding.on 'method', @handleBridgeMethod.bind(@)
         @binding.on 'forward', @handleBindingForward.bind(@)
 
@@ -236,7 +236,7 @@ class Bridge extends EventEmitter
     # local connection
 
     createConnection: ->
-        @connection = new Connection2
+        @connection = new BridgeConnection
             host: to_addr.host
             port: to_addr.port
             service: {id: 'bridge~c', name: 'bridge'}
@@ -275,10 +275,7 @@ class Bridge extends EventEmitter
     onConnectionMessage: (message) ->
         helpers.log.i "[connection.on message]", message
 
-        if cb = @connection_cbs[message.id]
-            cb(message)
-
-        else if message.service?.match /^bridge/
+        if message.service?.match /^bridge/
             @handleReverseBridge(message)
 
         # Forwarding to a specific service
@@ -300,15 +297,11 @@ class Bridge extends EventEmitter
         helpers.log.d '[sendConnection]', message
         message.id ||= helpers.randomString()
         message_json = JSON.stringify message
-        # if cb?
-        #     @connection_cbs[message.id] = cb
-        # # @connection_socket.send message_json
         @connection.send message, cb
 
     sendBinding: (connection_id, message, cb) ->
         helpers.log.d "[sendBinding] <#{connection_id}>", message
         message.id ||= helpers.randomString()
-        # message_json = JSON.stringify message
         @binding.send connection_id, message, cb
 
     forwardBindingMessageToConnection: (connection_id, message) ->
