@@ -73,39 +73,67 @@ class Bridge extends EventEmitter
 
     connectedToBridge: ->
         if BRIDGE_LOCAL
-            @registry_connection.method 'findServices', @foundLocalServices.bind(@)
+            @registry_connection.method 'findServices', @foundReverseLocalServices.bind(@)
             # Ask remote bridge for registry info
             setTimeout =>
-                @remoteBridgeMethod 'findServices', @foundRemoteServices.bind(@)
+                @remoteBridgeMethod 'findServices', @foundForwardRemoteServices.bind(@)
             , 1000
 
     connectedToRegistry: ->
         if BRIDGE_LOCAL
             # Get local registry info and send to remote bridge
             setTimeout =>
-                @registry_connection.method 'findServices', @foundLocalServices.bind(@)
+                @registry_connection.method 'findServices', @foundReverseLocalServices.bind(@)
+            , 1000
+        else
+            setTimeout =>
+                @registry_connection.method 'findServices', @foundForwardLocalServices.bind(@)
+                @remoteBridgeMethod 'findServices', @foundReverseRemoteServices.bind(@)
             , 1000
 
-    foundRemoteServices: (err, remote_services) ->
-        remote_service_instances = []
-        for service_name, service_instances of remote_services
+    foundForwardLocalServices: (err, forward_local_services) ->
+        for service_name, service_instances of forward_local_services
+            for service_id, service of service_instances
+                if !service.bridge?
+                    @forward_local_services[service_id] = service
+                else
+                    delete service_instances[service_id]
+
+        @remoteBridgeMethod 'registerServices', forward_local_services, (err, registered) ->
+
+    foundForwardRemoteServices: (err, forward_remote_services) ->
+        forward_remote_service_instances = []
+        for service_name, service_instances of forward_remote_services
             for service_id, service of service_instances
                 if !service.bridge?
                     service.port = from_port
                     service.bridge = 'forward'
-                    remote_service_instances.push service
+                    forward_remote_service_instances.push service
                     @forward_remote_services[service_id] = service
                 else
-                    helpers.log.w '[foundRemoteServices] Ignore remote bridged', service
-        @registry_connection.method 'registerServices', remote_service_instances, ->
-            helpers.log.d '[foundRemoteServices] Registered remote services with local bridge', Object.keys remote_services
+                    helpers.log.w '[foundForwardRemoteServices] Ignore remote bridged', service
 
-    foundLocalServices: (err, local_services) ->
-        for service_name, service_instances of local_services
+        @registry_connection.method 'registerServices', forward_remote_service_instances, ->
+            helpers.log.d '[foundForwardRemoteServices] Registered remote services with local bridge', Object.keys forward_remote_services
+
+    foundReverseLocalServices: (err, reverse_local_services) ->
+        for service_name, service_instances of reverse_local_services
             for service_id, service of service_instances
                 @reverse_local_services[service_id] = service
-        @remoteBridgeMethod 'registerServices', local_services, (err, registered) ->
-            helpers.log.d '[foundLocalServices] Registered local services with remote bridge', Object.keys local_services
+        @remoteBridgeMethod 'registerServices', reverse_local_services, (err, registered) ->
+            helpers.log.d '[foundReverseLocalServices] Registered local services with remote bridge', Object.keys reverse_local_services
+
+    foundReverseRemoteServices: (err, reverse_remote_services) ->
+        reverse_remote_service_instances = []
+        for service_name, service_instances of reverse_remote_services
+            for service_id, service of service_instances
+                continue if service.bridge?
+                @reverse_remote_services[service_id] = service
+                service.port = from_port
+                service.bridge = 'reverse'
+                reverse_remote_service_instances.push service
+        @registry_connection.method 'registerServices', reverse_remote_service_instances, ->
+            helpers.log.d '[handleBridgeMethod.registerServices] Registered local bridge services with local remote registry', Object.keys reverse_remote_services
 
     remoteBridgeMethod: (method, args..., cb) ->
         if cb? then handle_response = (response) -> cb response.error, response.response
@@ -147,7 +175,21 @@ class Bridge extends EventEmitter
         @binding.on 'forward', @handleBindingForward.bind(@)
 
     handleReverseBridge: (message) ->
-        if message.method == 'registerService'
+        if message.method == 'registerServices'
+            services = message.args[0]
+            instances = []
+            for service_name, service_instances of services
+                for service_id, service of service_instances
+                    if service.bridge != 'reverse'
+                        service.port = from_port
+                        service.bridge = 'forward'
+                        @forward_remote_services[service.id] = service
+                        instances.push service
+
+            @registry_connection.method 'registerServices', instances, ->
+                helpers.log.d '[handleReverseBridge] Registered local bridge service with local remote registry', service.id
+
+        else if message.method == 'registerService'
             service = message.args[0]
             service.port = from_port
             service.bridge = 'forward'
@@ -167,12 +209,15 @@ class Bridge extends EventEmitter
 
         # Local bridge finding remote services
         if message.method == 'findServices'
-            @registry_connection.method 'findServices', (err, services) =>
-                for service_name, service_instances of services
+            @registry_connection.method 'findServices', (err, forward_local_services) =>
+                for service_name, service_instances of forward_local_services
                     for service_id, service of service_instances
                         if !service.bridge?
                             @forward_local_services[service_id] = service
-                @sendBinding @bridged_connection_id, {id: message.id, kind: 'response', response: services}
+                        else
+                            delete service_instances[service_id]
+
+                @sendBinding @bridged_connection_id, {id: message.id, kind: 'response', response: forward_local_services}
 
         # Local bridge sending local services
         else if message.method == 'registerServices'
