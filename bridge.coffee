@@ -1,20 +1,26 @@
 zmq = require 'zmq'
 {EventEmitter} = require 'events'
 {Binding, Connection, helpers} = require 'somata'
-util = require 'util'
+minimist = require 'minimist'
+
+# Parse command line arguments
+
+argv = minimist process.argv
 
 REGISTRY_PROTO = process.env.SOMATA_REGISTRY_PROTO || 'tcp'
 REGISTRY_HOST = process.env.SOMATA_REGISTRY_HOST || '127.0.0.1'
 REGISTRY_PORT = process.env.SOMATA_REGISTRY_PORT || 8420
-BRIDGE_LOCAL = parseInt process.env.BRIDGE_LOCAL or 0
 
-from_port = parseInt process.argv[2]
-to_addr = helpers.parseAddress process.argv[3]
-if !from_port or !to_addr?.host or !to_addr?.port
-    console.log "Usage: bridge [from port] [to addr]"
+from_port = argv.from or helpers.randomPort()
+to_addr = helpers.parseAddress argv.to
+if !from_port and !to_addr?
+    console.log "Usage: bridge --to [to host]:[to port] --from [from port]"
+    console.log "At least one of --to or --from is required"
     process.exit()
 
-bridged_connection_id = null
+BRIDGE_LOCAL = to_addr?
+
+# Extend connection and binding to forward messages through bridge
 
 class BridgeConnection extends Connection
     handleMessage: (message) ->
@@ -48,7 +54,8 @@ class Bridge extends EventEmitter
     reverse_remote_services: {}
 
     constructor: ->
-        @createConnection()
+        if to_addr?
+            @createConnection()
         @createBinding()
         @connectToRegistry()
 
@@ -106,7 +113,7 @@ class Bridge extends EventEmitter
         if BRIDGE_LOCAL
             @sendConnection message, handle_response
         else
-            @sendBinding bridged_connection_id, message, handle_response
+            @sendBinding @bridged_connection_id, message, handle_response
 
     registeredService: (err, service) ->
         return if service.bridge?
@@ -156,7 +163,7 @@ class Bridge extends EventEmitter
                 helpers.log.d '[handleReverseBridge] Deregistered local bridge service with local remote registry', service.id
 
     handleBridgeMethod: (connection_id, message) ->
-        bridged_connection_id = connection_id
+        @bridged_connection_id = connection_id
 
         # Local bridge finding remote services
         if message.method == 'findServices'
@@ -165,7 +172,7 @@ class Bridge extends EventEmitter
                     for service_id, service of service_instances
                         if !service.bridge?
                             @forward_local_services[service_id] = service
-                @sendBinding bridged_connection_id, {id: message.id, kind: 'response', response: services}
+                @sendBinding @bridged_connection_id, {id: message.id, kind: 'response', response: services}
 
         # Local bridge sending local services
         else if message.method == 'registerServices'
@@ -214,7 +221,7 @@ class Bridge extends EventEmitter
             @sendConnection message, (response_message) =>
                 @sendBinding connection_id, response_message
         else if @reverse_remote_services[message.service]?
-            @sendBinding bridged_connection_id, message, (response_message) =>
+            @sendBinding @bridged_connection_id, message, (response_message) =>
                 @sendBinding connection_id, response_message
         else
             helpers.log.e '[handleBindingForward] Not handling', message
@@ -307,13 +314,13 @@ class Bridge extends EventEmitter
     forwardBindingMessageToConnection: (connection_id, message) ->
         helpers.log.d "[forwardBindingMessageToConnection] <#{connection_id}>", message
         @sendConnection message, (response_message) =>
-            @sendBinding bridged_connection_id, response_message
+            @sendBinding @bridged_connection_id, response_message
 
     forwardConnectionMessageToBinding: (message) ->
-        if bridged_connection_id?
-            helpers.log.d "[forwardConnectionMessageToBinding] -> <#{bridged_connection_id}>"
+        if @bridged_connection_id?
+            helpers.log.d "[forwardConnectionMessageToBinding] -> <#{@bridged_connection_id}>"
             setTimeout =>
-                @sendBinding bridged_connection_id, message, (response_message) =>
+                @sendBinding @bridged_connection_id, message, (response_message) =>
                     @sendConnection response_message
             , 500
         else
