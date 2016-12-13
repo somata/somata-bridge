@@ -209,12 +209,12 @@ class Bridge extends EventEmitter
     handleBindingForward: (connection_id, message) ->
         if @forward_local_services[message.service]?
             if connection = @getServiceConnection message.service
-                connection.send JSON.stringify message
                 @service_connection_cbs[message.id] = (response) =>
                     if @reverse_local_services[message.service]?
                         # @sendBinding connection_id, response
                     else
                         @sendBinding connection_id, response
+                connection.send JSON.stringify message
             else
                 helpers.log.e "[handleBindingForward] Couldn't find local service #{message.service}"
         else if @forward_remote_services[message.service]?
@@ -288,9 +288,9 @@ class Bridge extends EventEmitter
         # Forwarding to a specific service
         else if message.service?
             if connection = @getServiceConnection(message.service)
-                connection.send JSON.stringify message
                 @service_connection_cbs[message.id] = (response) =>
                     @sendConnection response
+                connection.send JSON.stringify message
 
             else
                 helpers.log.e "[connection.on message] Couldn't find service for #{message.service}"
