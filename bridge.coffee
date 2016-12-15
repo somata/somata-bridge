@@ -143,7 +143,7 @@ class Bridge extends EventEmitter
         else
             @sendBinding @bridged_connection_id, message, handle_response
 
-    registeredService: (err, service) ->
+    registeredService: (service) ->
         return if service.bridge?
 
         if BRIDGE_LOCAL
@@ -155,7 +155,7 @@ class Bridge extends EventEmitter
         @remoteBridgeMethod 'registerService', service, (err, registered) ->
             helpers.log.d '[registeredService] Registered local service with remote bridge', service.id
 
-    deregisteredService: (err, service) ->
+    deregisteredService: (service) ->
         return if service.bridge?
 
         delete @service_connections[service.id]
