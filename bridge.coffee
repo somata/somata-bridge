@@ -7,6 +7,7 @@ minimist = require 'minimist'
 
 argv = minimist process.argv
 
+VERBOSE = process.env.SOMATA_VERBOSE or false
 REGISTRY_PROTO = process.env.SOMATA_REGISTRY_PROTO || 'tcp'
 REGISTRY_HOST = process.env.SOMATA_REGISTRY_HOST || '127.0.0.1'
 REGISTRY_PORT = process.env.SOMATA_REGISTRY_PORT || 8420
@@ -275,7 +276,7 @@ class Bridge extends EventEmitter
         # TODO: There will be multiple connections to a binding, need
         # connection id per incoming messages for penidng callbacks
         message = JSON.parse message_json.toString()
-        helpers.log.i "[binding.on message] <#{connection_id}>", message
+        helpers.log.i "[binding.on message] <#{connection_id}>", message if VERBOSE
 
         if cb = @binding_cbs[message.id]
             cb(message)
@@ -319,13 +320,13 @@ class Bridge extends EventEmitter
     onServiceConnectionMessage: (message_json) ->
         message_json = message_json.toString()
         message = JSON.parse message_json
-        helpers.log.i "[service connection.on message]", message
+        helpers.log.i "[service connection.on message]", message if VERBOSE
 
         if cb = @service_connection_cbs[message.id]
             cb(message)
 
     onConnectionMessage: (message) ->
-        helpers.log.i "[connection.on message]", message
+        helpers.log.i "[connection.on message]", message if VERBOSE
 
         if message.service?.match /^bridge/
             @handleReverseBridge(message)
@@ -346,29 +347,29 @@ class Bridge extends EventEmitter
     # Sending messages and storing callbacks
 
     sendConnection: (message, cb) ->
-        helpers.log.d '[sendConnection]', message
+        helpers.log.d '[sendConnection]', message if VERBOSE
         message.id ||= helpers.randomString()
         message_json = JSON.stringify message
         @connection.send message, cb
 
     sendBinding: (connection_id, message, cb) ->
-        helpers.log.d "[sendBinding] <#{connection_id}>", message
+        helpers.log.d "[sendBinding] <#{connection_id}>", message if VERBOSE
         message.id ||= helpers.randomString()
         @binding.send connection_id, message, cb
 
     forwardBindingMessageToConnection: (connection_id, message) ->
-        helpers.log.d "[forwardBindingMessageToConnection] <#{connection_id}>", message
+        helpers.log.d "[forwardBindingMessageToConnection] <#{connection_id}>", message if VERBOSE
         @sendConnection message, (response_message) =>
             @sendBinding @bridged_connection_id, response_message
 
     forwardConnectionMessageToBinding: (message) ->
         if @bridged_connection_id?
-            helpers.log.d "[forwardConnectionMessageToBinding] -> <#{@bridged_connection_id}>"
+            helpers.log.d "[forwardConnectionMessageToBinding] -> <#{@bridged_connection_id}>" if VERBOSE
             setTimeout =>
                 @sendBinding @bridged_connection_id, message, (response_message) =>
                     @sendConnection response_message
             , 500
         else
-            helpers.log.e '[forwardConnectionMessageToBinding] no bridged_connection_id'
+            helpers.log.e '[forwardConnectionMessageToBinding] no bridged_connection_id' if VERBOSE
 
 bridge = new Bridge
