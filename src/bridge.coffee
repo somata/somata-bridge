@@ -1,4 +1,4 @@
-zmq = require 'zmq'
+zeromq = require 'zeromq'
 {EventEmitter} = require 'events'
 {Binding, Connection, helpers} = require 'somata'
 minimist = require 'minimist'
@@ -28,14 +28,14 @@ class BridgeConnection extends Connection
         if message.service?
             @emit 'forward', message
         else
-            super
+            super(message)
 
 class BridgeBinding extends Binding
     forwarded_pings: {}
 
     handleMessage: (client_id, message) ->
         if message.service?.match 'bridge'
-            super
+            super()
         else
             if message.kind == 'ping'
                 # Manipulate to be hello
@@ -55,6 +55,7 @@ class Bridge extends EventEmitter
     reverse_remote_services: {}
 
     constructor: ->
+        super()
         if to_addr?
             @createConnection()
         @createBinding()
@@ -297,7 +298,7 @@ class Bridge extends EventEmitter
         @connection.on 'forward', @onConnectionMessage.bind(@)
 
     createServiceConnection: (service) ->
-        connection_socket = zmq.socket 'dealer'
+        connection_socket = zeromq.socket 'dealer'
         connection_socket.identity = helpers.randomString()
         connection_socket.connect helpers.makeAddress 'tcp', service.host, service.port
 

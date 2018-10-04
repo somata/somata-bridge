@@ -1,28 +1,30 @@
 {
-    "name": "somata-bridge",
-    "version": "0.1.0",
-    "description": "Bridge betwee Somata servers",
-    "homepage": "http://github.com/somata/somata-bridge",
-    "repository": {
-        "type": "git",
-        "url": "http://github.com/somata/somata-bridge.git"
-    },
-    "author": {
-        "name": "Prontotype",
-        "url": "http://prontotype.us/"
-    },
-    "keywords": [
-        "somata",
-        "bridge",
-        "microservice"
-    ],
-    "main": "lib/bridge.js",
-    "bin": {
-        "somata-bridge": "lib/bridge.js"
-    },
-    "dependencies": {
-        "somata": "0.2.x",
-        "minimist": "1.2.x"
-    }
+  "name": "somata-bridge",
+  "version": "0.3.0",
+  "description": "Bridge between Somata servers",
+  "homepage": "http://github.com/somata/somata-bridge",
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/somata/somata-bridge.git"
+  },
+  "author": {
+    "name": "Prontotype",
+    "url": "http://prontotype.us/"
+  },
+  "keywords": [
+    "somata",
+    "bridge",
+    "microservice"
+  ],
+  "main": "lib/bridge.js",
+  "bin": {
+    "somata-bridge": "lib/bridge.js"
+  },
+  "scripts": {
+    "build": "coffee --bare -o lib -c src"
+  },
+  "dependencies": {
+    "somata": "0.3.1",
+    "minimist": "1.2.x"
+  }
 }
-
